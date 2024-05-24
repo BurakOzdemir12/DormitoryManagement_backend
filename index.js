@@ -4,10 +4,15 @@ import path from "path";
 import mysql from "mysql";
 import jwt from "jsonwebtoken";
 import cors from "cors";
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 
-// const express = require("express");
-// const jwt = require('jsonwebtoken');
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
+
+app.use('/images', express.static(join(__dirname, 'images')));
+
 
 const db = mysql.createConnection({
   host: "localhost",
@@ -54,7 +59,7 @@ app.post("/api/refresh", (req, res) => {
 });
 const generateAccessToken = (user) => {
   return jwt.sign({ id: user.id, isAdmin: user.isAdmin,dormId: user.dormId  }, "mysecretkey", {
-    expiresIn: "60m",
+    expiresIn: "120m",
   });
 };
 const generateRefreshToken = (user) => {
@@ -164,16 +169,14 @@ app.get("/users/:id", (req, res) => {
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, "Uploads/");
+    cb(null, "./images/"); 
   },
   filename: function (req, file, cb) {
-    const ext = path.extname(file.originalname);
-    cb(null, file.fieldname + "-" + Date.now() + ext);
+    cb(null, file.originalname);
   },
 });
-const upload = multer({ storage: storage });
 
-
+const upload = multer({ storage: storage })
 
 function handleDatabaseError(res, error) {
   console.error("Veritabanı hatası:", error);
@@ -187,52 +190,11 @@ function executeQueryWithParams(res, q, values) {
   });
 }
 
-app.get("/dormfeature", (req, res) => {
-  const q = "SELECT * FROM dormfeature";
-  db.query(q, (err, data) => {
-    if (err) return handleDatabaseError(res, err);
-    return res.json(data);
-  });
-});
 
-app.get("/dormfeature/:id", (req, res) => {
-  const dormId = req.params.id;
-  const q = "SELECT * FROM dormfeature WHERE dormId = ?";
-  db.query(q, [dormId], (err, data) => {
-    if (err) return handleDatabaseError(res, err);
-    if (data.length === 0) {
-      return res.status(404).json({ error: "Dorm feature not found" });
-    }
-    return res.json(data[0]);
-  });
-});
 
-app.post("/dormfeature", upload.single("dormImage"), (req, res) => {
-  const { dormName, dormAdress, dormContact, dormRoomCapacity, dormStudentCapacity,dormText } = req.body;
-  const dormImage = req.file ? req.file.path : "";
 
-  const q = "INSERT INTO dormfeature (dormName, dormAdress, dormContact, dormRoomCapacity, dormStudentCapacity, dormImage,dormText) VALUES (?, ?, ?, ?, ?, ?,?)";
-  const values = [dormName, dormAdress, dormContact, dormRoomCapacity, dormStudentCapacity, dormImage,dormText];
 
-  executeQueryWithParams(res, q, values);
-});
 
-app.delete("/dormfeature/:id", (req, res) => {
-  const dormId = req.params.id;
-  const q = "DELETE FROM dormfeature WHERE dormId = ?";
-  executeQueryWithParams(res, q, [dormId]);
-});
-
-app.put("/dormfeature/:id", upload.single("dormImage"), (req, res) => {
-  const dormId = req.params.id;
-  const { dormName, dormAdress, dormContact, dormRoomCapacity, dormStudentCapacity,dormText } = req.body;
-  const dormImage = req.file ? req.file.path : "";
-
-  const q = "UPDATE dormfeature SET dormName = ?, dormAdress = ?, dormContact = ?, dormRoomCapacity = ?, dormStudentCapacity = ?, dormImage = ? , dormText = ? WHERE dormId = ?";
-  const values = [dormName, dormAdress, dormContact, dormRoomCapacity, dormStudentCapacity, dormImage,dormText, dormId];
-
-  executeQueryWithParams(res, q, values);
-});
 
 
 
@@ -299,37 +261,28 @@ app.post("/rooms", (req, res) => {
 //create dormfeatures
 
 app.post("/dormfeature", upload.single("dormImage"), (req, res) => {
-  const { dormName, dormAdress, dormContact, dormRoomCapacity, dormStudentCapacity } = req.body;
-  const dormImage = req.file ? req.file.path : "";
+  const { dormName, dormAdress, dormContact, dormRoomCapacity, dormStudentCapacity,dormText } = req.body;
+  const dormImage = req.file ? req.file.filename : "";
 
-  const q = "INSERT INTO dormfeature SET ?";
-  const values = {
-    dormName,
-    dormAdress,
-    dormContact,
-    dormRoomCapacity,
-    dormStudentCapacity,
-    dormImage,
-  };
+  const q = "INSERT INTO dormfeature (dormName, dormAdress, dormContact, dormRoomCapacity, dormStudentCapacity, dormImage,dormText) VALUES (?, ?, ?, ?, ?, ?,?)";
+  const values = [dormName, dormAdress, dormContact, dormRoomCapacity, dormStudentCapacity, dormImage,dormText];
+
   executeQueryWithParams(res, q, values);
 });
 //CREATE dormsprice
-app.post("/dormsprice", (req, res) => {
-  const q =
-    "INSERT INTO dormsprice (`dormPrice`,`roomType`) VALUES (?)";
-  
-  const values = [
-    req.body.dormPrice,
-    req.body.roomType,
-  ];
 
-  db.query(q, [values], (err, data) => {
-    if (err) {
-      return res.json(err);
-    }
-    return res.json(`Room submitted`);
-  });
+app.post("/roomprops", upload.single("roomImage"), (req, res) => {
+  const dormId = req.body.dormId;
+  const roomImage = req.file ? req.file.filename : "";
+  const { roomType, roomPrice } = req.body;
+  const q = "INSERT INTO roomprops (roomPrice, roomType, roomImage, dormId) VALUES (?, ?, ?, ?)";
+  const values = [roomPrice, roomType, roomImage, dormId];
+
+  executeQueryWithParams(res, q, values);
 });
+
+
+
 // DELETE
 app.delete("/dormstudents/:id", (req, res) => {
   const studentId = req.params.id;
@@ -362,17 +315,18 @@ app.delete("/dormfeature/:id", (req, res) => {
   executeQueryWithParams(res, q, [dormId]);
 });
 // DELETE dormsprice
-app.delete("/dormsprice/:id", (req, res) => {
-  const dormspriceId = req.params.id;
-  const q = "DELETE FROM dormsprice WHERE id = ?";
+app.delete("/roomprops/:id", (req, res) => {
+  const dormId = req.params.id;
+  const q = "DELETE FROM roomprops WHERE id = ?";
 
-  db.query(q, [dormspriceId], (err, data) => {
+  db.query(q, [dormId], (err, data) => {
     if (err) {
       return res.json(err);
     }
     return res.json(`dormsprice delete successfully`);
   });
 });
+
 //UPDATE
 app.put("/dormstudents/:id", (req, res) => {
   const studentId = req.params.id;
@@ -436,38 +390,32 @@ app.put("/rooms/:id", (req, res) => {
 //UPDATE dormfeatures
 app.put("/dormfeature/:id", upload.single("dormImage"), (req, res) => {
   const dormId = req.params.id;
-  const { dormName, dormAdress, dormContact, dormRoomCapacity, dormStudentCapacity } = req.body;
-  const dormImage = req.file ? req.file.path : "";
+  const { dormName, dormAdress, dormContact, dormRoomCapacity, dormStudentCapacity,dormText } = req.body;
+  const dormImage = req.file ? req.file.filename : "";
 
-  const q = "UPDATE dormfeature SET ? WHERE dormId = ?";
-  const values = {
-    dormName,
-    dormAdress,
-    dormContact,
-    dormRoomCapacity,
-    dormStudentCapacity,
-    dormImage,
-  };
-  executeQueryWithParams(res, q, [values, dormId]);
+  const q = "UPDATE dormfeature SET dormName = ?, dormAdress = ?, dormContact = ?, dormRoomCapacity = ?, dormStudentCapacity = ?, dormImage = ? , dormText = ? WHERE dormId = ?";
+  const values = [dormName, dormAdress, dormContact, dormRoomCapacity, dormStudentCapacity, dormImage,dormText, dormId];
+
+  executeQueryWithParams(res, q, values);
 });
-//UPDATE dormsprice
-app.put("/dormsprice/:id", (req, res) => {
-  const studentId = req.params.id;
+//UPDATE roomsprops
+app.put("/roomprops/:id",upload.single("roomImage"), (req, res) => {
+
+  const id = req.params.id;
+  const { roomPrice, roomType } = req.body;
+  const roomImage = req.file ? req.file.filename : "";
 
   const q =
-    "UPDATE dormsprice SET `dormPrice`=?,`roomType`=?, WHERE id = ?";
+    "UPDATE roomprops SET roomPrice=?,roomType=?,roomImage=? WHERE id = ?";
   const values = [
-    req.body.dormPrice, // Changed from req.body.name
-    req.body.roomType,
-   
+    roomPrice, 
+    roomType,
+    roomImage,
+    id
   ];
-  db.query(q, [...values, studentId], (err, data) => {
-    if (err) {
-      return res.json(err + "wrong");
-    }
-    return res.json(data);
-  });
+  executeQueryWithParams(res, q, values);
 });
+
 //READ
 app.get("/dormstudents", (req, res) => {
   const q = "SELECT * FROM dormstudents";
@@ -525,7 +473,6 @@ app.get("/dormfeature", (req, res) => {
 app.get("/dormfeature/:id", (req, res) => {
   const dormId = req.params.id;
   const q = `SELECT * FROM dormfeature WHERE dormId = ?`;
-  console.log(dormId)
 
   db.query(q, [dormId], (err, data) => {
     if (err) return handleDatabaseError(res, err);
@@ -535,26 +482,24 @@ app.get("/dormfeature/:id", (req, res) => {
     return res.json(data[0]);
   });
 });
-//READ dormitoryprice
-app.get("/dormsprice", (req, res) => {
-  const q = "SELECT * FROM dormsprice";
+//READ roomprice
+app.get("/roomprops", (req, res) => {
+  const q = "SELECT * FROM roomprops";
   db.query(q, (err, data) => {
     if (err) return handleDatabaseError(res, err);
     return res.json(data);
   });
 });
-//Read ONE  dormsprice
-app.get("/dormsprice/:id", (req, res) => {
+app.get("/roomprops/:id", (req, res) => {
   const dormId = req.params.id;
-  const q = `SELECT * FROM dormsprice WHERE dormId = ?`;
-  console.log(dormId)
+  const q = `SELECT * FROM roomprops WHERE dormId = ?`;
 
   db.query(q, [dormId], (err, data) => {
     if (err) return handleDatabaseError(res, err);
     if (data.length === 0) {
-      return res.status(404).json({ error: "Dorm feature not found" });
+      return res.status(404).json({ error: "Room feature not found" });
     }
-    return res.json(data[0]);
+    return res.json(data);
   });
 });
 
