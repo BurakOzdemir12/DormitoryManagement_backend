@@ -241,7 +241,7 @@ app.post("/dormstudents", (req, res) => {
 //create Rooms
 app.post("/rooms", (req, res) => {
   const q =
-    "INSERT INTO rooms (`roomNumber`,`roomCapacity`,`roomType`,`roomStatu`,`student`) VALUES (?)";
+    "INSERT INTO rooms (`roomNumber`,`roomCapacity`,`roomType`,`roomStatu`,`student`,`dormId`) VALUES (?)";
   const students = JSON.parse(req.body.students);
   const values = [
     req.body.roomNumber, // Changed from req.body.name
@@ -249,6 +249,7 @@ app.post("/rooms", (req, res) => {
     req.body.roomType,
     req.body.roomStatu,
     JSON.stringify(students),
+    req.body.dormId,
   ];
 
   db.query(q, [values], (err, data) => {
@@ -258,7 +259,7 @@ app.post("/rooms", (req, res) => {
     return res.json(`Room submitted`);
   });
 });
-//create dormfeatures
+
 
 app.post("/dormfeature", upload.single("dormImage"), (req, res) => {
   const { dormName, dormAdress, dormContact, dormRoomCapacity, dormStudentCapacity,dormText } = req.body;
@@ -387,6 +388,7 @@ app.put("/rooms/:id", (req, res) => {
     return res.json(data);
   });
 });
+
 //UPDATE dormfeatures
 app.put("/dormfeature/:id", upload.single("dormImage"), (req, res) => {
   const dormId = req.params.id;
@@ -437,6 +439,7 @@ app.get("/dormstudents/:id", (req, res) => {
     return res.json(data[0]);
   });
 });
+
 //READ For Rooms
 app.get("/rooms", (req, res) => {
   const q = "SELECT * FROM rooms";
@@ -484,7 +487,9 @@ app.get("/dormfeature/:id", (req, res) => {
 });
 //READ roomprice
 app.get("/roomprops", (req, res) => {
-  const q = "SELECT * FROM roomprops";
+  const dormId = req.params.id;
+
+  const q = "SELECT * FROM roomprops ";
   db.query(q, (err, data) => {
     if (err) return handleDatabaseError(res, err);
     return res.json(data);
@@ -500,7 +505,9 @@ app.get("/roomprops/:id", (req, res) => {
       return res.status(404).json({ error: "Room feature not found" });
     }
     return res.json(data);
+
   });
+
 });
 
 
