@@ -1,6 +1,5 @@
 import express from "express";
 import multer from "multer";
-import path from "path";
 import mysql from "mysql";
 import jwt from "jsonwebtoken";
 import cors from "cors";
@@ -10,12 +9,20 @@ import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
+import { Server } from "socket.io";
+import http from "http";
 
 dotenv.config();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
-
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "http://localhost:3000/",
+    methods: ["GET", "POST"],
+  },
+});
 app.use("/images", express.static(join(__dirname, "images")));
 
 const db = mysql.createConnection({
@@ -128,13 +135,21 @@ app.post("/users", async (req, res) => {
       }
 
       const verificationCode = generateVerificationCode();
-      const verificationToken = crypto.randomBytes(32).toString('hex');
+      const verificationToken = crypto.randomBytes(32).toString("hex");
 
       const insertUserQuery =
         "INSERT INTO users (username, password, firstName, lastName, passaportNo, isVerified, verification,verificationToken) VALUES (?, ?, ?, ?, ?, false, ?,?)";
       db.query(
         insertUserQuery,
-        [username, hashedPassword, firstName, lastName, passaportNo, verificationCode,verificationToken],
+        [
+          username,
+          hashedPassword,
+          firstName,
+          lastName,
+          passaportNo,
+          verificationCode,
+          verificationToken,
+        ],
         async (err, result) => {
           if (err) {
             console.error("Database insert error:", err);
@@ -164,7 +179,7 @@ app.post("/users", async (req, res) => {
             subject: "Doğrulama Kodu ✔",
             text: `Merhaba ${firstName},\n\nDoğrulama kodunuz: ${verificationCode}\n\nDoğrulamak için bu linke tıklayınız: ${verificationLink}\n\nEMU Yönetimi`,
             html: `<p>Merhaba ${firstName},</p><p>Doğrulama kodunuz: <strong>${verificationCode}</strong></p><p>Doğrulamak için <a href="${verificationLink}">bu linke</a> tıklayınız.</p><p>EMU Yönetimi</p>`,
-        };
+          };
 
           try {
             await transporter.sendMail(mailOptions);
@@ -181,7 +196,7 @@ app.post("/users", async (req, res) => {
 
 function generateVerificationCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
-} 
+}
 app.get("/verify-email", (req, res) => {
   const { token } = req.query;
 
@@ -199,7 +214,8 @@ app.get("/verify-email", (req, res) => {
 
     console.log("User found:", results[0]); // Kullanıcıyı kontrol edin
 
-    const updateUserQuery = "UPDATE users SET isVerified = true WHERE verificationToken = ?";
+    const updateUserQuery =
+      "UPDATE users SET isVerified = true WHERE verificationToken = ?";
     db.query(updateUserQuery, [token], (err, results) => {
       if (err) {
         console.error("Database update error:", err);
@@ -215,7 +231,7 @@ app.get("/verify-email", (req, res) => {
 // verification
 app.post("/verify", (req, res) => {
   const { username, verificationCode } = req.body;
- console.log("Doğrulama isteği alındı:", req.body); 
+  console.log("Doğrulama isteği alındı:", req.body);
   const q = "SELECT * FROM users WHERE username = ? AND verification = ?";
   db.query(q, [username, verificationCode], (err, results) => {
     if (err) {
@@ -227,7 +243,8 @@ app.post("/verify", (req, res) => {
       return res.status(400).json("Invalid verification code");
     }
 
-    const updateUserQuery = "UPDATE users SET isVerified = true WHERE username = ?";
+    const updateUserQuery =
+      "UPDATE users SET isVerified = true WHERE username = ?";
     db.query(updateUserQuery, [username], (err, results) => {
       if (err) {
         console.error("Database update error:", err);
@@ -239,30 +256,29 @@ app.post("/verify", (req, res) => {
   });
 });
 
-
 //Login auth with username password (!For Emu Students)
-app.post('/api/login', (req, res) => {
+app.post("/api/login", (req, res) => {
   const { username, password } = req.body;
 
-  const q = 'SELECT * FROM users WHERE username = ?';
+  const q = "SELECT * FROM users WHERE username = ?";
   db.query(q, [username], (err, results) => {
     if (err) return res.status(500).json(err);
-    if (results.length === 0) return res.status(400).json('Username or password incorrect!');
+    if (results.length === 0)
+      return res.status(400).json("Username or password incorrect!");
 
     const user = results[0];
 
     if (!user.isVerified) {
-      return res.status(400).json('Please verify your email!');
+      return res.status(400).json("Please verify your email!");
     }
 
-    const hashedPassword = user.password; // Veritabanındaki hashlenmiş şifre
+    const hashedPassword = user.password; 
 
-    // Girilen şifreyi ve veritabanındaki hash'i karşılaştır
     bcrypt.compare(password, hashedPassword, (err, result) => {
       if (err) return res.status(500).json(err);
-      if (!result) return res.status(400).json('Username or password incorrect!');
+      if (!result)
+        return res.status(400).json("Username or password incorrect!");
 
-      // Şifre doğrulandıysa, kullanıcı bilgilerini kullanarak tokenler oluştur
       const accessToken = generateAccessToken(user);
       const refreshToken = generateRefreshToken(user);
 
@@ -277,6 +293,9 @@ app.post('/api/login', (req, res) => {
     });
   });
 });
+
+
+
 //Verify Token
 const verify = (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -323,7 +342,6 @@ app.get("/users/:id", (req, res) => {
 });
 
 //
-
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, "./images/");
@@ -332,8 +350,8 @@ const storage = multer.diskStorage({
     cb(null, file.originalname);
   },
 });
-
 const upload = multer({ storage: storage });
+
 
 function handleDatabaseError(res, error) {
   console.error("Veritabanı hatası:", error);
@@ -346,18 +364,35 @@ function executeQueryWithParams(res, q, values) {
     return res.json(data);
   });
 }
-
+const executeQueryWithParamsJson = (res, q, values) => {
+  db.query(q, values, (err, data) => {
+    if (err) return handleDatabaseError(res, err);
+    return res.json(data);
+  });
+};
 app.get("/api/me", verify, (req, res) => {
   const userId = req.user.id;
-  const q = "SELECT id,dormId FROM users WHERE id = ?";
+
+  const q = `
+  SELECT  users.id AS userId, users.firstName,  users.lastName, users.isAdmin, dormfeature.dormId
+  FROM   users LEFT OUTER JOIN   dormfeature ON users.dormID = dormfeature.dormId
+  LEFT OUTER JOIN   rooms ON users.dormID = rooms.dormId
+  WHERE   users.id = ?
+
+  `;
+
   db.query(q, [userId], (err, results) => {
     if (err) return res.status(500).json(err);
     if (results.length === 0) return res.status(404).json("User not found");
+
+    // Kullanıcı bilgilerini döndürüyoruz
     res.json(results[0]);
   });
 });
 
+
 //CRUD OPERATIONS =>
+
 
 //CREATE
 app.post("/dormstudents", (req, res) => {
@@ -417,8 +452,8 @@ app.post("/dormfeature", upload.single("dormImage"), (req, res) => {
   } = req.body;
   const dormImage = req.file ? req.file.filename : "";
 
-  const q =
-    "INSERT INTO dormfeature (dormName, dormAdress, dormContact, dormRoomCapacity, dormStudentCapacity, dormImage,dormText) VALUES (?, ?, ?, ?, ?, ?,?)";
+const q =
+    "INSERT INTO dormfeature (dormName, dormAdress, dormContact, dormRoomCapacity, dormStudentCapacity, dormImage, dormText) VALUES (?, ?, ?, ?, ?, ?, ?)";
   const values = [
     dormName,
     dormAdress,
@@ -429,21 +464,67 @@ app.post("/dormfeature", upload.single("dormImage"), (req, res) => {
     dormText,
   ];
 
-  executeQueryWithParams(res, q, values);
+  db.query(q, values, (err, result) => {
+    if (err) return res.status(500).json(err);
+    res.status(200).json({ insertId: result.insertId });
+  });
 });
 //CREATE dormsprice
 
-app.post("/roomprops", upload.single("roomImage"), (req, res) => {
-  const dormId = req.body.dormId;
-  const roomImage = req.file ? req.file.filename : "";
-  const { roomType, roomPrice } = req.body;
-  const q =
-    "INSERT INTO roomprops (roomPrice, roomType, roomImage, dormId) VALUES (?, ?, ?, ?)";
-  const values = [roomPrice, roomType, roomImage, dormId];
+app.post("/roomprops", upload.array("roomImage", 5), (req, res) => {
+  try {
+    const { roomPrice, roomType, dormId } = req.body;
+    const roomImages = req.files ? req.files.map((file) => file.filename) : [];
 
-  executeQueryWithParams(res, q, values);
+    const q = `
+      INSERT INTO roomprops (roomPrice, roomType, roomImage, dormId)
+      VALUES (?, ?, ?, ?)`;
+    const values = [roomPrice, roomType, JSON.stringify(roomImages), dormId];
+
+    executeQueryWithParamsJson(res, q, values);
+  } catch (error) {
+    res.status(500).send({ error: "Hata oluştu" });
+  }
 });
+//CREATE reservation post
+app.post("/reservations", (req, res) => {
+  const q =
+    "INSERT INTO reservations (`studentNo`,`phoneNumb`,`firstName`,`lastName`,`gender`,`dormId`,`roomId`) VALUES (?)";
+  const values = [
+    req.body.studentNo, // Changed from req.body.name
+    req.body.phoneNumb,
+    req.body.firstName,
+    req.body.lastName,
+    req.body.gender,
+    req.body.dormId,
+    req.body.roomId,
+  ];
 
+  db.query(q, [values], (err, data) => {
+    if (err) {
+      return res.json(err);
+    }
+    return res.json(`res submitted`);
+  });
+});
+//Create dormmanager
+
+app.post("/dormadminadd", (req, res) => {
+  const { username, password, firstName, lastName, dormId } = req.body;
+  const isAdmin = 1;
+  const isVerified = 1;
+  const   passaportNo=0;
+  const q = `
+    INSERT INTO users (username, password, firstName, lastName,  passaportNo,isVerified,isAdmin, dormId)
+    VALUES (?, ?, ?, ?, ?, ?,?,?)
+  `;
+  const values = [username, password, firstName, lastName,passaportNo, isAdmin, dormId,isVerified];
+
+  db.query(q, values, (err, result) => {
+    if (err) return res.status(500).json(err);
+    res.status(200).json({ userId: result.insertId });
+  });
+}); 
 // DELETE
 app.delete("/dormstudents/:id", (req, res) => {
   const studentId = req.params.id;
@@ -487,8 +568,31 @@ app.delete("/roomprops/:id", (req, res) => {
     return res.json(`dormsprice delete successfully`);
   });
 });
+app.delete("/deleteres/:id", (req, res) => {
+  const id = req.params.id;
+  const updateUserQuery = "DELETE FROM reservations WHERE id = ?";
+  db.query(updateUserQuery, [id], (err, results) => {
+    if (err) {
+      console.error("Database update error:", err);
+      return res.status(500).json({ error: "Database update error" });
+    }
+    res.json("Reservation verified successfully");
+  });
+});
 
-//UPDATE
+//UPDATE Verify Reservation
+app.put("/verifyres/:id", (req, res) => {
+  const id = req.params.id;
+  const updateUserQuery = "UPDATE reservations SET isVerified = true WHERE id = ?";
+  db.query(updateUserQuery, [id], (err, results) => {
+    if (err) {
+      console.error("Database update error:", err);
+      return res.status(500).json({ error: "Database update error" });
+    }
+    res.json("Reservation verified successfully");
+  });
+});
+//UPDATE DORMSTUDENTS
 app.put("/dormstudents/:id", (req, res) => {
   const studentId = req.params.id;
 
@@ -549,6 +653,8 @@ app.put("/rooms/:id", (req, res) => {
 });
 
 //UPDATE dormfeatures
+  
+
 app.put("/dormfeature/:id", upload.single("dormImage"), (req, res) => {
   const dormId = req.params.id;
   const {
@@ -561,6 +667,7 @@ app.put("/dormfeature/:id", upload.single("dormImage"), (req, res) => {
   } = req.body;
   const dormImage = req.file ? req.file.filename : "";
 
+  
   const q =
     "UPDATE dormfeature SET dormName = ?, dormAdress = ?, dormContact = ?, dormRoomCapacity = ?, dormStudentCapacity = ?, dormImage = ? , dormText = ? WHERE dormId = ?";
   const values = [
@@ -577,16 +684,19 @@ app.put("/dormfeature/:id", upload.single("dormImage"), (req, res) => {
   executeQueryWithParams(res, q, values);
 });
 //UPDATE roomsprops
-app.put("/roomprops/:id", upload.single("roomImage"), (req, res) => {
+
+app.put("/roomprops/:id", upload.array("roomImage", 5), (req, res) => {
   const id = req.params.id;
-  const { roomPrice, roomType } = req.body;
-  const roomImage = req.file ? req.file.filename : "";
+  const { roomPrice, roomType, dormId } = req.body; // dormId'yi body'den al
+  const roomImages = req.files ? req.files.map((file) => file.filename) : [];
 
   const q =
-    "UPDATE roomprops SET roomPrice=?,roomType=?,roomImage=? WHERE id = ?";
-  const values = [roomPrice, roomType, roomImage, id];
-  executeQueryWithParams(res, q, values);
+    "UPDATE roomprops SET roomPrice=?, roomType=?, roomImage=?, dormId=? WHERE id=?";
+  const values = [roomPrice, roomType, JSON.stringify(roomImages), dormId, id];
+
+  executeQueryWithParamsJson(res, q, values);
 });
+
 
 //READ
 app.get("/dormstudents", (req, res) => {
@@ -642,6 +752,7 @@ app.get("/dormfeature", (req, res) => {
   });
 });
 //Read ONE  DormFeature
+
 app.get("/dormfeature/:id", (req, res) => {
   const dormId = req.params.id;
   const q = `SELECT * FROM dormfeature WHERE dormId = ?`;
@@ -656,14 +767,22 @@ app.get("/dormfeature/:id", (req, res) => {
 });
 //READ roomprice
 app.get("/roomprops", (req, res) => {
-  const dormId = req.params.id;
+  const q = "SELECT * FROM roomprops";
 
-  const q = "SELECT * FROM roomprops ";
   db.query(q, (err, data) => {
-    if (err) return handleDatabaseError(res, err);
-    return res.json(data);
+    if (err) return res.json(err);
+
+    // Veritabanından gelen her bir kaydın roomImage alanını parse ediyoruz
+    const parsedData = data.map((feature) => ({
+      ...feature,
+      roomImage: JSON.parse(feature.roomImage || "[]"),
+    }));
+
+    return res.json(parsedData);
   });
 });
+
+
 app.get("/roomprops/:id", (req, res) => {
   const dormId = req.params.id;
   const q = `SELECT * FROM roomprops WHERE dormId = ?`;
@@ -673,7 +792,14 @@ app.get("/roomprops/:id", (req, res) => {
     if (data.length === 0) {
       return res.status(404).json({ error: "Room feature not found" });
     }
-    return res.json(data);
+    
+    // Veritabanından gelen her bir kaydın roomImage alanını parse ediyoruz
+    const parsedData = data.map((feature) => ({
+      ...feature,
+      roomImage: JSON.parse(feature.roomImage || "[]"),
+    }));
+    
+    return res.json(parsedData);
   });
 });
 // app.get("/students", (req, res) => {
@@ -685,23 +811,121 @@ app.get("/roomprops/:id", (req, res) => {
 //   });
 // });
 
+// app.get("/students", (req, res) => {
+//   const query = "SELECT mail, passaportNo FROM students";
+//   db.query(query, (err, data) => {
+//     if (err) {
+//       console.error("Error fetching student data: " + err.stack);
+//       res.status(500).json({ error: "Internal server error" });
+//       return;
+//     }
+
+//     const studentInfo = data.map((student) => ({
+//       email: student.mail,
+//       passaportNo: student.passaportNo,
+//     }));
+//     res.json(studentInfo);
+//   });
+// });
 app.get("/students", (req, res) => {
-  const query = "SELECT mail, passaportNo FROM students";
+  const query = "SELECT * FROM students";
   db.query(query, (err, data) => {
     if (err) {
       console.error("Error fetching student data: " + err.stack);
       res.status(500).json({ error: "Internal server error" });
       return;
     }
-    
-    const studentInfo = data.map(student => ({
+
+    const studentInfo = data.map((student) => ({
+      firstName: student.firstName,
+      lastName: student.lastName,
+      studentNo: student.studentNo,
+      age: student.age,
       email: student.mail,
-      passaportNo: student.passaportNo
+      phoneNumb: student.phoneNumb,
+      passaportNo: student.passaportNo,
+      registerStatu: student.registerStatu,
+      faculty: student.faculty,
+      gender: student.gender,
     }));
     res.json(studentInfo);
   });
+});
+app.get("/reservations", (req, res) => {
+  const q = "SELECT * FROM reservations";
+  db.query(q, (err, data) => {
+    if (err) {
+      return res.json(err);
+    }
+    return res.json(data);
+  });
+});
+//READ FOR ONE OBECT( using ild)
+app.get("/reservations/:id", (req, res) => {
+  const reservationId = req.params.id;
+  const q = `SELECT * FROM reservations WHERE id = ${reservationId}`;
+  db.query(q, (err, data) => {
+    if (err) {
+      return res.json(err);
+    }
+    return res.json(data[0]);
+  });
+});
+app.get("/dormadminadd", (req, res) => {
+  const q = "SELECT * FROM users";
+  db.query(q, (err, data) => {
+    if (err) {
+      return res.json(err);
+    }
+    return res.json(data);
+  });
+});
+
+io.on("connection", (socket) => {
+  console.log("Yeni bir kullanıcı bağlandı");
+
+  socket.on("joinRoom", ({ dormId, roomId, roomNumber }) => {
+    const roomName = `${dormId}-${roomId}-${roomNumber}`;
+    socket.join(roomName);
+    console.log(`Kullanıcı odaya katıldı: ${roomName}`);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("Bir kullanıcı ayrıldı");
+  });
+
+  socket.on("message", (msg) => {
+    console.log("Yeni mesaj:", msg);
+    const roomName = `${msg.dormId}-${msg.roomId}-${msg.roomNumber}`;
+    io.to(roomName).emit("message", msg);
+
+    // Mesajı veritabanına kaydet
+    const query =
+      "INSERT INTO messages (dormId, roomId, studentName, roomNumber, timestamp, text) VALUES (?, ?, ?, ?, ?, ?)";
+    const values = [
+      msg.dormId,
+      msg.roomId,
+      msg.studentName,
+      msg.roomNumber,
+      msg.timestamp,
+      msg.text,
+    ];
+    db.query(query, values, (err, result) => {
+      if (err) {
+        console.error("Error saving message to database:", err);
+      } else {
+        console.log("Message saved to database:", result);
+      }
+    });
+  });
+});
+const PORT = 8000;
+server.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
 });
 
 app.listen(8800, () => {
   console.log("Connected to backend ");
 });
+
+
