@@ -651,6 +651,47 @@ app.put("/rooms/:id", (req, res) => {
     return res.json(data);
   });
 });
+//update room with reservations card
+
+
+app.put("/rooms/assign/:id", (req, res) => {
+  const roomId = req.params.id;
+  const studentData = req.body.student;
+
+  // Veritabanındaki mevcut öğrenci bilgilerini al
+  const qSelect = "SELECT `student` FROM rooms WHERE id = ?";
+  db.query(qSelect, [roomId], (err, result) => {
+    if (err) {
+      return res.status(500).json({ error: err.message });
+    }
+
+    // Mevcut öğrenci bilgilerini JSON formatında çöz
+    let existingStudents = [];
+    if (result[0] && result[0].student) {
+      try {
+        existingStudents = JSON.parse(result[0].student);
+      } catch (parseErr) {
+        return res.status(500).json({ error: "Öğrenci verileri çözümlenemedi." });
+      }
+    }
+
+    // Yeni öğrenci bilgisini mevcut öğrenci bilgilerine ekle
+    if (!existingStudents.includes(studentData)) {
+      existingStudents.push(studentData);
+    }
+
+    const updatedStudents = JSON.stringify(existingStudents);
+
+    // Öğrenci bilgilerini güncelle
+    const qUpdate = "UPDATE rooms SET `student`=? WHERE id = ?";
+    db.query(qUpdate, [updatedStudents, roomId], (err, data) => {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      return res.status(200).json({ message: "Öğrenci odaya başarıyla atandı!" });
+    });
+  });
+});
 
 //UPDATE dormfeatures
   
